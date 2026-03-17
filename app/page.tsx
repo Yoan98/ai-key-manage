@@ -28,6 +28,12 @@ type KeyConfig = {
   apiKey: string;
   model: string;
   createdAt: string;
+  lastTest?: {
+    status: "success" | "error";
+    message: string;
+    detail?: string;
+    testedAt: string;
+  };
 };
 
 type FormState = {
@@ -44,7 +50,9 @@ type TestResult = {
   status: TestStatus;
   message: string;
   detail?: string;
+  testedAt?: string;
 };
+type FinishedTestResult = NonNullable<KeyConfig["lastTest"]>;
 
 const STORAGE_KEY = "ai-key-vault-configs-v1";
 const PASS_TEXT = "主人，快鞭策我吧";
@@ -305,6 +313,140 @@ function formatAll(configs: KeyConfig[], type: ExportType): string {
   ].join("\n");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function cleanOneLineText(input: string, maxLen = 220): string {
+  const singleLine = input.replace(/\s+/g, " ").trim();
+  if (!singleLine) return "";
+  if (singleLine.length <= maxLen) return singleLine;
+  return `${singleLine.slice(0, maxLen)}...`;
+}
+
+function toReadableResponseText(content: unknown): string {
+  if (typeof content === "string") return cleanOneLineText(content);
+  if (!Array.isArray(content)) return "";
+
+  const texts = content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (!isRecord(part)) return "";
+      const text = part.text;
+      return typeof text === "string" ? text : "";
+    })
+    .filter(Boolean);
+
+  return cleanOneLineText(texts.join(" "));
+}
+
+function safeDateToIso(input: unknown): string {
+  if (typeof input !== "string") return "";
+  const d = new Date(input);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+function normalizeFinishedTestResult(input: unknown): FinishedTestResult | undefined {
+  if (!isRecord(input)) return undefined;
+
+  const status = input.status;
+  if (status !== "success" && status !== "error") return undefined;
+
+  const message = typeof input.message === "string" && input.message.trim() ? input.message.trim() : "";
+  const detail = typeof input.detail === "string" && input.detail.trim() ? cleanOneLineText(input.detail, 300) : "";
+  const testedAt = safeDateToIso(input.testedAt);
+
+  if (!testedAt) return undefined;
+
+  return {
+    status,
+    message: message || (status === "success" ? PASS_TEXT : FAIL_TEXT),
+    detail: detail || undefined,
+    testedAt
+  };
+}
+
+function toDateTimeLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "未知时间";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(d);
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!isRecord(error)) return "";
+
+  const directMessage = error.message;
+  if (typeof directMessage === "string" && directMessage.trim()) return cleanOneLineText(directMessage, 260);
+
+  const nestedPaths = [
+    ["error", "message"],
+    ["response", "error", "message"],
+    ["body", "error", "message"],
+    ["cause", "message"]
+  ];
+
+  for (const path of nestedPaths) {
+    let current: unknown = error;
+    for (const key of path) {
+      if (!isRecord(current)) {
+        current = "";
+        break;
+      }
+      current = current[key];
+    }
+    if (typeof current === "string" && current.trim()) return cleanOneLineText(current, 260);
+  }
+
+  return "";
+}
+
+function makeErrorDetail(error: unknown): string {
+  const baseError = isRecord(error) ? error : {};
+  const status = typeof baseError.status === "number" ? baseError.status : undefined;
+  const name = typeof baseError.name === "string" ? baseError.name : "";
+  const raw = getErrorMessage(error);
+
+  let detail = "测试异常，请检查地址或模型";
+  if (status === 401 || status === 403) detail = "Key 无效或权限不足";
+  else if (status === 404) detail = "地址可达，但聊天接口不存在";
+  else if (typeof status === "number") detail = `请求失败（HTTP ${status}）`;
+  else if (name === "AbortError" || /timeout|timed out/i.test(raw)) detail = "请求超时，请检查地址";
+  else if (/network|fetch failed|connection|ENOTFOUND|ECONNREFUSED/i.test(raw))
+    detail = "请求失败，请检查网络或地址";
+
+  if (!raw) return detail;
+  if (detail.includes(raw)) return detail;
+  return `${detail}；接口返回：${raw}`;
+}
+
+function normalizeStoredConfigs(raw: string): KeyConfig[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .map((item, index) => {
+      if (!isRecord(item)) return null;
+      const id = typeof item.id === "string" && item.id ? item.id : crypto.randomUUID();
+      const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : makeDefaultName(index + 1);
+      const baseUrl = normalizeBaseUrl(typeof item.baseUrl === "string" ? item.baseUrl : "");
+      const apiKey = cleanKey(typeof item.apiKey === "string" ? item.apiKey : "");
+      const model = typeof item.model === "string" ? item.model.trim() : "";
+      const createdAt = safeDateToIso(item.createdAt) || new Date().toISOString();
+      const lastTest = normalizeFinishedTestResult(item.lastTest);
+
+      return { id, name, baseUrl, apiKey, model, createdAt, lastTest };
+    })
+    .filter((item): item is KeyConfig => Boolean(item));
+}
+
 function defaultTestResult(): TestResult {
   return { status: "idle", message: "未测试" };
 }
@@ -340,8 +482,7 @@ export default function Home() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     try {
-      const parsed = JSON.parse(raw) as KeyConfig[];
-      setConfigs(Array.isArray(parsed) ? parsed : []);
+      setConfigs(normalizeStoredConfigs(raw));
     } catch {
       setConfigs([]);
     }
@@ -503,6 +644,11 @@ export default function Home() {
     setNotice("已删除全部配置");
   }
 
+  function commitFinishedTestResult(id: string, result: FinishedTestResult) {
+    setResultMap((prev) => ({ ...prev, [id]: result }));
+    setConfigs((prev) => prev.map((item) => (item.id === id ? { ...item, lastTest: result } : item)));
+  }
+
   async function runTest(item: KeyConfig): Promise<boolean> {
     setLoadingMap((prev) => ({ ...prev, [item.id]: true }));
     setResultMap((prev) => ({ ...prev, [item.id]: { status: "pending", message: "测试中..." } }));
@@ -511,10 +657,12 @@ export default function Home() {
     const apiKey = cleanKey(item.apiKey);
 
     if (!baseUrl || !apiKey) {
-      setResultMap((prev) => ({
-        ...prev,
-        [item.id]: { status: "error", message: FAIL_TEXT, detail: "地址或 Key 为空" }
-      }));
+      commitFinishedTestResult(item.id, {
+        status: "error",
+        message: FAIL_TEXT,
+        detail: "地址或 Key 为空",
+        testedAt: new Date().toISOString()
+      });
       setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
       return false;
     }
@@ -535,36 +683,33 @@ export default function Home() {
       });
 
       const content = response.choices[0]?.message?.content;
-      const hasMessage = typeof content === "string" ? Boolean(content.trim()) : Boolean(content);
+      const readableText = toReadableResponseText(content);
+      const hasMessage = Boolean(readableText || content);
 
       if (hasMessage) {
-        setResultMap((prev) => ({
-          ...prev,
-          [item.id]: { status: "success", message: PASS_TEXT, detail: "返回消息正常" }
-        }));
+        commitFinishedTestResult(item.id, {
+          status: "success",
+          message: PASS_TEXT,
+          detail: readableText ? `接口返回：${readableText}` : "返回消息正常",
+          testedAt: new Date().toISOString()
+        });
         return true;
       }
 
-      setResultMap((prev) => ({
-        ...prev,
-        [item.id]: { status: "error", message: FAIL_TEXT, detail: "未返回消息内容" }
-      }));
+      commitFinishedTestResult(item.id, {
+        status: "error",
+        message: FAIL_TEXT,
+        detail: "未返回消息内容",
+        testedAt: new Date().toISOString()
+      });
       return false;
     } catch (error: unknown) {
-      const e = error as { status?: number; message?: string; name?: string };
-      const message = e.message || "";
-      let detail = "测试异常，请检查地址或模型";
-
-      if (e.status === 401 || e.status === 403) detail = "Key 无效或权限不足";
-      else if (e.status === 404) detail = "地址可达，但聊天接口不存在";
-      else if (typeof e.status === "number") detail = `请求失败（HTTP ${e.status}）`;
-      else if (e.name === "AbortError" || /timeout|timed out/i.test(message)) detail = "请求超时，请检查地址";
-      else if (/network|fetch failed|connection/i.test(message)) detail = "请求失败，请检查网络或地址";
-
-      setResultMap((prev) => ({
-        ...prev,
-        [item.id]: { status: "error", message: FAIL_TEXT, detail }
-      }));
+      commitFinishedTestResult(item.id, {
+        status: "error",
+        message: FAIL_TEXT,
+        detail: makeErrorDetail(error),
+        testedAt: new Date().toISOString()
+      });
       return false;
     } finally {
       setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
@@ -654,11 +799,25 @@ export default function Home() {
       return;
     }
 
+    const original = configs.find((item) => item.id === id);
+    const resetLastTest =
+      Boolean(original) &&
+      (original.baseUrl !== baseUrl || original.apiKey !== apiKey || (original.model || "") !== model);
+
     setConfigs((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, name: name || item.name, baseUrl, apiKey, model } : item
+        item.id === id
+          ? { ...item, name: name || item.name, baseUrl, apiKey, model, lastTest: resetLastTest ? undefined : item.lastTest }
+          : item
       )
     );
+    if (resetLastTest) {
+      setResultMap((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
 
     if (editingModelId === id) {
       setEditingModelId(null);
@@ -676,7 +835,19 @@ export default function Home() {
 
   function saveInlineModelEdit(id: string) {
     const nextModel = modelDraft.trim();
-    setConfigs((prev) => prev.map((item) => (item.id === id ? { ...item, model: nextModel } : item)));
+    const original = configs.find((item) => item.id === id);
+    const resetLastTest = Boolean(original) && (original.model || "") !== nextModel;
+
+    setConfigs((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, model: nextModel, lastTest: resetLastTest ? undefined : item.lastTest } : item))
+    );
+    if (resetLastTest) {
+      setResultMap((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
     setEditingModelId(null);
     setModelDraft("");
     setNotice("模型已更新");
@@ -823,7 +994,7 @@ export default function Home() {
             <ul className="grid gap-3">
               {configs.map((item) => {
                 const testing = loadingMap[item.id];
-                const result = resultMap[item.id] || defaultTestResult();
+                const result = resultMap[item.id] || item.lastTest || defaultTestResult();
                 const isEditing = editingId === item.id;
                 const isEditingModel = editingModelId === item.id;
 
@@ -938,7 +1109,20 @@ export default function Home() {
                                 <StatusIcon status={result.status} />
                                 <span>{result.message}</span>
                               </span>
-                              {result.detail ? <span className="text-xs text-zinc-500">{result.detail}</span> : null}
+                              {result.status === "error" && result.detail ? (
+                                <details className="w-full rounded-lg border border-red-100 bg-red-50/50 px-2 py-1.5 text-xs text-red-800">
+                                  <summary className="cursor-pointer font-medium text-red-700">有错误，点击查看详情</summary>
+                                  <div className="mt-1 whitespace-pre-wrap break-words leading-5">{result.detail}</div>
+                                </details>
+                              ) : result.detail ? (
+                                <span className="text-xs text-zinc-500">{result.detail}</span>
+                              ) : null}
+                              {item.lastTest?.testedAt ? (
+                                <span className="text-xs text-zinc-500">
+                                  上次测试：{toDateTimeLabel(item.lastTest.testedAt)}（
+                                  {item.lastTest.status === "success" ? "通过" : "失败"}）
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </div>
