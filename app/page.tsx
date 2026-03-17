@@ -75,6 +75,8 @@ const smallBtn =
   "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50";
 const smallDangerBtn =
   "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-700 hover:bg-red-700 hover:text-white";
+const iconCopyBtn =
+  "inline-flex shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 transition hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-800 disabled:cursor-not-allowed disabled:opacity-50";
 
 function normalizeBaseUrl(raw: string): string {
   const cleaned = raw.trim().replace(/\/+$/, "");
@@ -1053,16 +1055,40 @@ export default function Home() {
                             <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
                               <FaLink aria-hidden /> 地址
                             </span>
-                            <span className="break-all text-sm text-zinc-800">{item.baseUrl || "(未填写)"}</span>
+                            <div className="flex items-start gap-2">
+                              <span className="break-all text-sm text-zinc-800">{item.baseUrl || "(未填写)"}</span>
+                              <button
+                                type="button"
+                                className={iconCopyBtn}
+                                onClick={() => copyText(item.baseUrl, `已复制地址：${item.name}`)}
+                                title="复制地址"
+                                aria-label="复制地址"
+                                disabled={!item.baseUrl}
+                              >
+                                <FaCopy aria-hidden />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
                             <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
                               <FaKey aria-hidden /> Key
                             </span>
-                            <span className="break-all font-mono text-sm text-zinc-800">
-                              {item.apiKey ? toMaskedKey(item.apiKey) : "(未填写)"}
-                            </span>
+                            <div className="flex items-start gap-2">
+                              <span className="break-all font-mono text-sm text-zinc-800">
+                                {item.apiKey ? toMaskedKey(item.apiKey) : "(未填写)"}
+                              </span>
+                              <button
+                                type="button"
+                                className={iconCopyBtn}
+                                onClick={() => copyText(item.apiKey, `已复制 Key：${item.name}`)}
+                                title="复制 Key"
+                                aria-label="复制 Key"
+                                disabled={!item.apiKey}
+                              >
+                                <FaCopy aria-hidden />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="grid gap-1 sm:grid-cols-[90px_1fr] sm:items-start sm:gap-2">
