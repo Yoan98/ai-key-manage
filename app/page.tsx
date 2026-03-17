@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import OpenAI from "openai";
 import { useEffect, useMemo, useState } from "react";
 import {
   FaBolt,
@@ -57,6 +58,11 @@ const btnBase =
 const btnPrimary = `${btnBase} border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700`;
 const btnGhost = `${btnBase} border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 hover:border-zinc-400`;
 const btnDanger = `${btnBase} border-red-200 bg-white text-red-600 hover:border-red-700 hover:bg-red-700 hover:text-white`;
+const topBtnBase =
+  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60";
+const topBtnPrimary = `${topBtnBase} border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700`;
+const topBtnGhost = `${topBtnBase} border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 hover:border-zinc-400`;
+const topBtnDanger = `${topBtnBase} border-red-200 bg-white text-red-500 hover:border-red-700 hover:bg-red-700 hover:text-white`;
 const smallBtn =
   "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50";
 const smallDangerBtn =
@@ -67,6 +73,19 @@ function normalizeBaseUrl(raw: string): string {
   if (!cleaned) return "";
   if (!/^https?:\/\//i.test(cleaned)) return `https://${cleaned}`;
   return cleaned;
+}
+
+function toOpenAIBaseUrl(raw: string): string {
+  const normalized = normalizeBaseUrl(raw);
+  if (!normalized) return "";
+
+  const withoutEndpoint = normalized
+    .replace(/\/chat\/completions$/i, "")
+    .replace(/\/responses$/i, "")
+    .replace(/\/completions$/i, "");
+
+  if (/\/v\d+$/i.test(withoutEndpoint)) return withoutEndpoint;
+  return `${withoutEndpoint}/v1`;
 }
 
 function cleanKey(raw: string): string {
@@ -343,15 +362,18 @@ export default function Home() {
   function ExportMenu({
     onExport,
     label = "导出",
-    size = "default"
+    size = "default",
+    triggerClassName
   }: {
     onExport: (type: ExportType) => void;
     label?: string;
     size?: "default" | "small";
+    triggerClassName?: string;
   }) {
     const menuItemClass =
       "flex w-full items-center rounded-lg px-2.5 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100";
-    const triggerClass = size === "small" ? `${smallBtn} list-none` : `${btnGhost} list-none`;
+    const triggerClass =
+      triggerClassName || (size === "small" ? `${smallBtn} list-none` : `${btnGhost} list-none`);
 
     function handle(type: ExportType, e: React.MouseEvent<HTMLButtonElement>) {
       onExport(type);
@@ -485,31 +507,63 @@ export default function Home() {
     setLoadingMap((prev) => ({ ...prev, [item.id]: true }));
     setResultMap((prev) => ({ ...prev, [item.id]: { status: "pending", message: "测试中..." } }));
 
-    try {
-      const resp = await fetch("/api/test-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: item.baseUrl, apiKey: item.apiKey, model: item.model })
-      });
-      const data = (await resp.json()) as { ok: boolean; message: string };
+    const baseUrl = toOpenAIBaseUrl(item.baseUrl);
+    const apiKey = cleanKey(item.apiKey);
 
-      if (data.ok) {
+    if (!baseUrl || !apiKey) {
+      setResultMap((prev) => ({
+        ...prev,
+        [item.id]: { status: "error", message: FAIL_TEXT, detail: "地址或 Key 为空" }
+      }));
+      setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
+      return false;
+    }
+
+    try {
+      const client = new OpenAI({
+        apiKey,
+        baseURL: baseUrl,
+        timeout: 12000,
+        maxRetries: 0,
+        dangerouslyAllowBrowser: true
+      });
+
+      const response = await client.chat.completions.create({
+        model: item.model || "gpt-4o-mini",
+        messages: [{ role: "user", content: "你好，请回复：ok" }],
+        max_tokens: 16
+      });
+
+      const content = response.choices[0]?.message?.content;
+      const hasMessage = typeof content === "string" ? Boolean(content.trim()) : Boolean(content);
+
+      if (hasMessage) {
         setResultMap((prev) => ({
           ...prev,
-          [item.id]: { status: "success", message: PASS_TEXT, detail: data.message }
+          [item.id]: { status: "success", message: PASS_TEXT, detail: "返回消息正常" }
         }));
         return true;
       }
 
       setResultMap((prev) => ({
         ...prev,
-        [item.id]: { status: "error", message: FAIL_TEXT, detail: data.message }
+        [item.id]: { status: "error", message: FAIL_TEXT, detail: "未返回消息内容" }
       }));
       return false;
-    } catch {
+    } catch (error: unknown) {
+      const e = error as { status?: number; message?: string; name?: string };
+      const message = e.message || "";
+      let detail = "测试异常，请检查地址或模型";
+
+      if (e.status === 401 || e.status === 403) detail = "Key 无效或权限不足";
+      else if (e.status === 404) detail = "地址可达，但聊天接口不存在";
+      else if (typeof e.status === "number") detail = `请求失败（HTTP ${e.status}）`;
+      else if (e.name === "AbortError" || /timeout|timed out/i.test(message)) detail = "请求超时，请检查地址";
+      else if (/network|fetch failed|connection/i.test(message)) detail = "请求失败，请检查网络或地址";
+
       setResultMap((prev) => ({
         ...prev,
-        [item.id]: { status: "error", message: FAIL_TEXT, detail: "请求失败，请检查网络或地址" }
+        [item.id]: { status: "error", message: FAIL_TEXT, detail }
       }));
       return false;
     } finally {
@@ -731,23 +785,23 @@ export default function Home() {
         <section className="rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm sm:p-4">
           <div className="mb-3 space-y-2">
             <h2 className="text-base font-semibold whitespace-nowrap text-zinc-900">配置列表</h2>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <button type="button" className={btnPrimary} onClick={testAllConfigs} disabled={testingAll}>
+            <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button type="button" className={topBtnPrimary} onClick={testAllConfigs} disabled={testingAll}>
                 {testingAll ? <FaSpinner className="animate-spin" aria-hidden /> : <FaBolt aria-hidden />}
                 <span>{testingAll ? "测试中" : "一键测试全部"}</span>
               </button>
               <button
                 type="button"
-                className={btnGhost}
+                className={topBtnGhost}
                 onClick={() => copyText(formatAll(configs, "txt"), "已复制全部配置")}
               >
                 <FaCopy aria-hidden />
                 <span>复制全部</span>
               </button>
-              <ExportMenu onExport={exportAll} />
+              <ExportMenu onExport={exportAll} triggerClassName={topBtnGhost} />
               <button
                 type="button"
-                className={btnDanger}
+                className={topBtnDanger}
                 onClick={removeAllConfigs}
                 disabled={configs.length === 0}
               >
