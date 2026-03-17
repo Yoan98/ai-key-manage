@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Key Vault
 
-## Getting Started
+一个给自己和朋友用的「API Key 管理 + 一键测试」小工具。
 
-First, run the development server:
+## 这个项目是怎么来的
+
+手上会有不少白嫖/试用的 API Key，数量一多就容易乱，而且经常会出现“昨天还能用，今天就挂了”的情况。
+所以顺手让 AI 搭了这个工具：把 Key 统一收进来，点一下就能测可用性，不用每次手动 curl。
+
+有需要的直接打开网页就能用。
+
+## 能做什么
+
+- 本地保存多组配置（名称 / Base URL / API Key / 模型）
+- 支持粘贴自动解析（JSON、curl、文本块）
+- 单条测试 or 一键测试全部
+- 显示测试状态、错误详情、上一次测试时间和结果
+- 支持复制与导出（`.txt` / `.md`）
+
+## 隐私说明
+
+所有数据都只存浏览器本地（`localStorage`），不走你自己的后端数据库。
+简单说：工具本身不托管你的 Key，关掉网页数据还在本机，清浏览器缓存才会丢。
+
+## 快速开始
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+然后访问 [http://localhost:3000](http://localhost:3000)。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 打包部署
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm run start
+```
 
-## Learn More
+也可以直接部署到 Vercel / Netlify 等支持 Next.js 的平台。
 
-To learn more about Next.js, take a look at the following resources:
+## 适合谁用
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 手上有多套 API Key，需要集中管理的人
+- 需要快速判断某个 Key 还能不能打通接口的人
+- 想要一个纯前端、本地可用的小工具的人
