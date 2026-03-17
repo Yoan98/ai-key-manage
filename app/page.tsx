@@ -431,20 +431,23 @@ function normalizeStoredConfigs(raw: string): KeyConfig[] {
   const parsed = JSON.parse(raw) as unknown;
   if (!Array.isArray(parsed)) return [];
 
-  return parsed
-    .map((item, index) => {
-      if (!isRecord(item)) return null;
-      const id = typeof item.id === "string" && item.id ? item.id : crypto.randomUUID();
-      const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : makeDefaultName(index + 1);
-      const baseUrl = normalizeBaseUrl(typeof item.baseUrl === "string" ? item.baseUrl : "");
-      const apiKey = cleanKey(typeof item.apiKey === "string" ? item.apiKey : "");
-      const model = typeof item.model === "string" ? item.model.trim() : "";
-      const createdAt = safeDateToIso(item.createdAt) || new Date().toISOString();
-      const lastTest = normalizeFinishedTestResult(item.lastTest);
+  const normalized: KeyConfig[] = [];
+  for (let index = 0; index < parsed.length; index += 1) {
+    const item = parsed[index];
+    if (!isRecord(item)) continue;
 
-      return { id, name, baseUrl, apiKey, model, createdAt, lastTest };
-    })
-    .filter((item): item is KeyConfig => Boolean(item));
+    const id = typeof item.id === "string" && item.id ? item.id : crypto.randomUUID();
+    const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : makeDefaultName(index + 1);
+    const baseUrl = normalizeBaseUrl(typeof item.baseUrl === "string" ? item.baseUrl : "");
+    const apiKey = cleanKey(typeof item.apiKey === "string" ? item.apiKey : "");
+    const model = typeof item.model === "string" ? item.model.trim() : "";
+    const createdAt = safeDateToIso(item.createdAt) || new Date().toISOString();
+    const lastTest = normalizeFinishedTestResult(item.lastTest);
+
+    normalized.push({ id, name, baseUrl, apiKey, model, createdAt, lastTest });
+  }
+
+  return normalized;
 }
 
 function defaultTestResult(): TestResult {
@@ -800,9 +803,9 @@ export default function Home() {
     }
 
     const original = configs.find((item) => item.id === id);
-    const resetLastTest =
-      Boolean(original) &&
-      (original.baseUrl !== baseUrl || original.apiKey !== apiKey || (original.model || "") !== model);
+    const resetLastTest = original
+      ? original.baseUrl !== baseUrl || original.apiKey !== apiKey || (original.model || "") !== model
+      : false;
 
     setConfigs((prev) =>
       prev.map((item) =>
@@ -836,7 +839,7 @@ export default function Home() {
   function saveInlineModelEdit(id: string) {
     const nextModel = modelDraft.trim();
     const original = configs.find((item) => item.id === id);
-    const resetLastTest = Boolean(original) && (original.model || "") !== nextModel;
+    const resetLastTest = original ? (original.model || "") !== nextModel : false;
 
     setConfigs((prev) =>
       prev.map((item) => (item.id === id ? { ...item, model: nextModel, lastTest: resetLastTest ? undefined : item.lastTest } : item))
