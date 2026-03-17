@@ -76,7 +76,7 @@ const smallBtn =
 const smallDangerBtn =
   "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-700 hover:bg-red-700 hover:text-white";
 const iconCopyBtn =
-  "inline-flex shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 transition hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-800 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-45";
 
 function normalizeBaseUrl(raw: string): string {
   const cleaned = raw.trim().replace(/\/+$/, "");
@@ -1055,8 +1055,8 @@ export default function Home() {
                             <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
                               <FaLink aria-hidden /> 地址
                             </span>
-                            <div className="flex items-start gap-2">
-                              <span className="break-all text-sm text-zinc-800">{item.baseUrl || "(未填写)"}</span>
+                            <div className="inline-flex max-w-full items-start gap-1.5">
+                              <span className="min-w-0 break-all text-sm text-zinc-800">{item.baseUrl || "(未填写)"}</span>
                               <button
                                 type="button"
                                 className={iconCopyBtn}
@@ -1074,8 +1074,8 @@ export default function Home() {
                             <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
                               <FaKey aria-hidden /> Key
                             </span>
-                            <div className="flex items-start gap-2">
-                              <span className="break-all font-mono text-sm text-zinc-800">
+                            <div className="inline-flex max-w-full items-start gap-1.5">
+                              <span className="min-w-0 break-all font-mono text-sm text-zinc-800">
                                 {item.apiKey ? toMaskedKey(item.apiKey) : "(未填写)"}
                               </span>
                               <button

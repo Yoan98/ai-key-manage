@@ -8,3 +8,8 @@ html,
 body {
   min-height: 100%;
 }
+
+button:not(:disabled),
+summary {
+  cursor: pointer;
+}
