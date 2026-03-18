@@ -3623,7 +3623,7 @@ export default function Home() {
 
       {probeDialogItem ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-950/35 px-4">
-          <div className="w-full max-w-4xl rounded-[30px] border border-zinc-200 bg-white p-4 shadow-2xl sm:p-5">
+          <div className="w-full max-w-5xl rounded-[30px] border border-zinc-200 bg-white p-4 shadow-2xl sm:p-5">
             {(() => {
               const activeProbe = probeMap[probeDialogItem.id] || probeDialogItem.probe || defaultProbeResult();
               const currentModel = probeDialogItem.model || "";
@@ -3690,7 +3690,9 @@ export default function Home() {
 
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-600">当前模型</p>
-                      <p className="mt-2 break-all text-lg font-bold text-emerald-900">{currentModel || "未设置"}</p>
+                      <p className="mt-2 text-lg font-bold leading-7 break-words text-emerald-900 [overflow-wrap:anywhere]">
+                        {currentModel || "未设置"}
+                      </p>
                       <p className="mt-2 text-sm text-emerald-800">这里只保留复制与切换，性能评测放到独立窗口里做。</p>
                     </div>
                   </div>
@@ -3701,7 +3703,7 @@ export default function Home() {
                       <p className="text-xs text-zinc-500">轻量展示，避免和测试工作台混在一起</p>
                     </div>
                     {activeProbe.supportedModels.length > 0 ? (
-                      <div className="grid max-h-[45vh] grid-cols-1 items-start gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid max-h-[48vh] grid-cols-1 gap-2 overflow-y-auto pr-1 lg:grid-cols-2">
                         {activeProbe.supportedModels.map((model) => {
                           const isCurrent = currentModel === model;
                           const tags = inferModelTags(model);
@@ -3709,32 +3711,40 @@ export default function Home() {
                           return (
                             <div
                               key={model}
-                              className={`self-start rounded-xl border px-3 py-2.5 ${
+                              className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-2xl border px-3 py-3 ${
                                 isCurrent ? "border-emerald-300 bg-emerald-50/70" : "border-zinc-200 bg-zinc-50"
                               }`}
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="break-all text-[13px] font-semibold leading-5 text-zinc-900">{model}</p>
-                                  {tags.length > 0 ? (
-                                    <div className="mt-1.5 flex flex-wrap gap-1">
-                                      {tags.map((tag) => (
-                                        <span
-                                          key={`${model}-${tag}`}
-                                          className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] ${getTagClassName(tag)}`}
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))}
-                                    </div>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-start gap-2">
+                                  <p
+                                    className="min-w-0 flex-1 text-[15px] font-semibold leading-6 break-words text-zinc-900 [overflow-wrap:anywhere]"
+                                    title={model}
+                                  >
+                                    {model}
+                                  </p>
+                                  {isCurrent ? (
+                                    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                      当前
+                                    </span>
                                   ) : null}
                                 </div>
-                                {isCurrent ? (
-                                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">当前</span>
+
+                                {tags.length > 0 ? (
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {tags.map((tag) => (
+                                      <span
+                                        key={`${model}-${tag}`}
+                                        className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] ${getTagClassName(tag)}`}
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
                                 ) : null}
                               </div>
 
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <div className="flex shrink-0 items-center gap-1.5 self-center lg:self-start">
                                 <button
                                   type="button"
                                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-[11px] text-zinc-500 transition hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-45"
