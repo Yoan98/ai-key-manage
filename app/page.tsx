@@ -257,16 +257,127 @@ function normalizeParsedModelValue(input: string): string {
   return normalizeParsedFieldValue(input).replace(/\s+/g, "");
 }
 
+type StructuredFieldRule = {
+  field: keyof FormState;
+  labelPattern: string;
+  normalize: (value: string) => string;
+};
+
+const STRUCTURED_FIELD_RULES: StructuredFieldRule[] = [
+  {
+    field: "name",
+    labelPattern: "(?:name|名称|配置名|别名|标签|title)",
+    normalize: normalizeParsedFieldValue
+  },
+  {
+    field: "baseUrl",
+    labelPattern:
+      "(?:base\\s*url|base_url|base-url|api\\s*base|api_base|api-base|api\\s*url|api_url|api-url|endpoint|url|地址|接口地址|请求地址|服务地址|域名|host)",
+    normalize: (value) => normalizeBaseUrl(normalizeParsedFieldValue(value))
+  },
+  {
+    field: "apiKey",
+    labelPattern: "(?:api\\s*key|api_key|api-key|access[_-]?token|access\\s*token|token|key|密钥|令牌|凭证)",
+    normalize: (value) => cleanKey(normalizeParsedFieldValue(value))
+  },
+  {
+    field: "model",
+    labelPattern: "(?:default\\s*model|default_model|default-model|model\\s*name|model_name|model-name|model|模型|默认模型)",
+    normalize: normalizeParsedModelValue
+  }
+];
+
+const STRUCTURED_FIELD_SEPARATOR_PATTERN = "(?::|：|=|＝|=>|->)";
+const ANY_STRUCTURED_LABEL_PATTERN = STRUCTURED_FIELD_RULES.map((rule) => rule.labelPattern).join("|");
+const DECORATIVE_LINE_RE = /^\s*(?:=+|-{3,}|_{3,}|~{3,})\s*$/;
+const INDEX_ONLY_LINE_RE = /^\s*(?:\[\s*\d+\s*\]|\(\s*\d+\s*\)|（\s*\d+\s*）|#\s*\d+|(?:item|配置)\s*\d+|\d+[.)、])\s*$/i;
+const INLINE_FIELD_BREAK_RE = new RegExp(
+  `([^\\n])\\s+(?=(?:${ANY_STRUCTURED_LABEL_PATTERN})\\s*(?:${STRUCTURED_FIELD_SEPARATOR_PATTERN}))`,
+  "gi"
+);
+
+function hasAnyParsedField(item: Partial<ParsedConfig>): boolean {
+  return Boolean(item.name || item.baseUrl || item.apiKey || item.model);
+}
+
+function hasCoreParsedField(item: Partial<ParsedConfig>): boolean {
+  return Boolean(item.baseUrl || item.apiKey || item.model);
+}
+
+function mergeParsedConfig(base: Partial<ParsedConfig>, incoming: Partial<ParsedConfig>): Partial<ParsedConfig> {
+  return {
+    name: base.name || incoming.name,
+    baseUrl: base.baseUrl || incoming.baseUrl,
+    apiKey: base.apiKey || incoming.apiKey,
+    model: base.model || incoming.model,
+    sourceMeta: incoming.sourceMeta || base.sourceMeta
+  };
+}
+
+function shouldStartNewParsedConfig(current: Partial<ParsedConfig>, incoming: Partial<ParsedConfig>): boolean {
+  if (!hasAnyParsedField(current) || !hasAnyParsedField(incoming)) return false;
+  if (incoming.name && current.name) return true;
+  if (incoming.name && hasCoreParsedField(current)) return true;
+  if (incoming.baseUrl && current.baseUrl) return true;
+  if (incoming.apiKey && current.apiKey) return true;
+  if (incoming.model && current.model && (current.baseUrl || current.apiKey)) return true;
+  return false;
+}
+
+function preprocessStructuredText(input: string): string {
+  return input.replace(/\r\n?/g, "\n").replace(INLINE_FIELD_BREAK_RE, "$1\n");
+}
+
+function parseStructuredFieldLine(line: string): Partial<ParsedConfig> {
+  const normalized = line
+    .trim()
+    .replace(/^[>|]+/, "")
+    .replace(/^[\s\-*•]+/, "")
+    .trim();
+
+  if (!normalized || DECORATIVE_LINE_RE.test(normalized) || INDEX_ONLY_LINE_RE.test(normalized)) return {};
+
+  for (const rule of STRUCTURED_FIELD_RULES) {
+    const match = normalized.match(
+      new RegExp(
+        `^\\s*(?:\\[\\s*\\d+\\s*\\]|\\(\\s*\\d+\\s*\\)|（\\s*\\d+\\s*）|#\\s*\\d+\\s*|\\d+[.)、]\\s*)?${rule.labelPattern}\\s*(?:${STRUCTURED_FIELD_SEPARATOR_PATTERN})\\s*(.+?)\\s*$`,
+        "i"
+      )
+    );
+    if (!match?.[1]) continue;
+
+    return {
+      [rule.field]: rule.normalize(match[1])
+    } as Partial<ParsedConfig>;
+  }
+
+  return {};
+}
+
+function parseStructuredSegment(input: string): Partial<ParsedConfig> {
+  const text = preprocessStructuredText(input).trim();
+  if (!text) return {};
+
+  let out: Partial<ParsedConfig> = {};
+  for (const line of text.split("\n")) {
+    const parsedLine = parseStructuredFieldLine(line);
+    if (!hasAnyParsedField(parsedLine)) continue;
+    out = mergeParsedConfig(out, parsedLine);
+  }
+
+  return out;
+}
+
 function parseSingleSegment(input: string): Partial<ParsedConfig> {
   const text = input.trim();
   if (!text) return {};
 
-  const out: Partial<ParsedConfig> = {};
+  const out: Partial<ParsedConfig> = parseStructuredSegment(text);
 
   const keyPatterns = [
-    /api[_-]?key["'\s:=]+([A-Za-z0-9._-]{10,})/i,
+    /api[_-]?key["'\s:：=＝]+([A-Za-z0-9._-]{10,})/i,
     /bearer\s+([A-Za-z0-9._-]{10,})/i,
-    /key["'\s:=]+([A-Za-z0-9._-]{10,})/i
+    /key["'\s:：=＝]+([A-Za-z0-9._-]{10,})/i
   ];
   for (const p of keyPatterns) {
     const m = text.match(p);
@@ -288,7 +399,9 @@ function parseSingleSegment(input: string): Partial<ParsedConfig> {
     if (hostLike?.[0]) out.baseUrl = normalizeBaseUrl(hostLike[0]);
   }
 
-  const modelMatch = text.match(/(?:^|\n|\r|[,{])\s*(?:model|model_name|modelName|default_model|defaultModel|模型)\s*["']?\s*[:=]\s*["'`]?([^"'`\n\r,}]+)["'`]?/i);
+  const modelMatch = text.match(
+    /(?:^|\n|\r|[,{])\s*(?:model|model_name|modelName|default_model|defaultModel|模型)\s*["']?\s*[:：=＝]\s*["'`]?([^"'`\n\r,}]+)["'`]?/i
+  );
   if (modelMatch?.[1]) out.model = normalizeParsedModelValue(modelMatch[1]);
 
   return out;
@@ -388,11 +501,11 @@ function parseCcSwitchTextBlock(input: string): Partial<ParsedConfig> {
   const text = input.trim();
   if (!text) return {};
 
-  const appMatch = text.match(/(?:^|\n)\s*app\s*[:=]\s*([a-z-]+)/i);
-  const nameMatch = text.match(/(?:^|\n)\s*name\s*[:=]\s*(.+?)(?:\n|$)/i);
-  const endpointMatch = text.match(/(?:^|\n)\s*endpoint\s*[:=]\s*(.+?)(?:\n|$)/i);
-  const keyMatch = text.match(/(?:^|\n)\s*apiKey\s*[:=]\s*(.+?)(?:\n|$)/i);
-  const modelMatch = text.match(/(?:^|\n)\s*(?:model|模型)\s*[:=]\s*(.+?)(?:\n|$)/i);
+  const appMatch = text.match(/(?:^|\n)\s*app\s*[:：=＝]\s*([a-z-]+)/i);
+  const nameMatch = text.match(/(?:^|\n)\s*name\s*[:：=＝]\s*(.+?)(?:\n|$)/i);
+  const endpointMatch = text.match(/(?:^|\n)\s*endpoint\s*[:：=＝]\s*(.+?)(?:\n|$)/i);
+  const keyMatch = text.match(/(?:^|\n)\s*apiKey\s*[:：=＝]\s*(.+?)(?:\n|$)/i);
+  const modelMatch = text.match(/(?:^|\n)\s*(?:model|模型)\s*[:：=＝]\s*(.+?)(?:\n|$)/i);
 
   if (!appMatch && !endpointMatch && !keyMatch && !modelMatch) return {};
 
@@ -473,7 +586,50 @@ function parsePastedConfigs(input: string, startIndex: number): ParsedConfig[] {
     // Ignore JSON parse errors and continue with text parsing.
   }
 
-  const blocks = text
+  const normalizedText = preprocessStructuredText(text);
+  const structuredItems: Partial<ParsedConfig>[] = [];
+  let current: Partial<ParsedConfig> = {};
+
+  for (const rawLine of normalizedText.split("\n")) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      if (hasCoreParsedField(current)) {
+        structuredItems.push(current);
+        current = {};
+      }
+      continue;
+    }
+
+    if (DECORATIVE_LINE_RE.test(line)) continue;
+
+    if (INDEX_ONLY_LINE_RE.test(line)) {
+      if (hasAnyParsedField(current)) {
+        structuredItems.push(current);
+        current = {};
+      }
+      continue;
+    }
+
+    const parsedLine = parseSingleSegment(line);
+    if (!hasAnyParsedField(parsedLine)) continue;
+
+    if (shouldStartNewParsedConfig(current, parsedLine)) {
+      structuredItems.push(current);
+      current = {};
+    }
+
+    current = mergeParsedConfig(current, parsedLine);
+  }
+
+  if (hasAnyParsedField(current)) {
+    structuredItems.push(current);
+  }
+
+  const fromStructuredText = finalizeParsed(structuredItems, startIndex);
+  if (fromStructuredText.length > 0) return fromStructuredText;
+
+  const blocks = normalizedText
     .split(/\n\s*\n+/)
     .map((s) => s.trim())
     .filter(Boolean);
@@ -491,12 +647,16 @@ function parsePastedConfigs(input: string, startIndex: number): ParsedConfig[] {
 
   const globalUrls = collectGlobalMatches(text, /https?:\/\/[^\s"'`]+/gi).map(normalizeBaseUrl);
   const globalKeys = [
-    ...collectGlobalMatches(text, /api[_-]?key["'\s:=]+([A-Za-z0-9._-]{10,})/gi, 1),
+    ...collectGlobalMatches(text, /api[_-]?key["'\s:：=＝]+([A-Za-z0-9._-]{10,})/gi, 1),
     ...collectGlobalMatches(text, /bearer\s+([A-Za-z0-9._-]{10,})/gi, 1),
     ...collectGlobalMatches(text, /(?:sk|rk|ak|pk)[-_][A-Za-z0-9._-]{8,}/gi)
   ].map(cleanKey);
   const globalModels = [
-    ...collectGlobalMatches(text, /(?:^|\n|\r|[,{])\s*(?:model|model_name|modelName|default_model|defaultModel|模型)\s*["']?\s*[:=]\s*["'`]?([^"'`\n\r,}]+)["'`]?/gi, 1)
+    ...collectGlobalMatches(
+      text,
+      /(?:^|\n|\r|[,{])\s*(?:model|model_name|modelName|default_model|defaultModel|模型)\s*["']?\s*[:：=＝]\s*["'`]?([^"'`\n\r,}]+)["'`]?/gi,
+      1
+    )
   ].map(normalizeParsedModelValue);
 
   const paired: Partial<FormState>[] = [];
