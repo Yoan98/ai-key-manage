@@ -13,6 +13,7 @@ import {
   FaEdit,
   FaExchangeAlt,
   FaFileExport,
+  FaGithub,
   FaInfoCircle,
   FaKey,
   FaLink,
@@ -152,6 +153,7 @@ type CcSwitchAction = {
 const STORAGE_KEY = "ai-key-vault-configs-v1";
 const LEGACY_STORAGE_KEYS = ["ai-key-vault-configs", "ai-key-check-configs-v1"];
 const INTRO_SEEN_KEY = "ai-key-vault-intro-seen-v1";
+const SOURCE_REPO_URL = "https://github.com/Yoan98/ai-key-manage";
 const PASS_TEXT = "主人，快鞭策我吧";
 const FAIL_TEXT = "主人，我不行了";
 const DEFAULT_BENCHMARK_ROUNDS = 2;
@@ -2765,18 +2767,41 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-5xl space-y-3 px-3 py-4 text-zinc-900 sm:px-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
-          <Image
-            src="/logo.png"
-            alt="Logo"
-            width={32}
-            height={32}
-            className="h-8 w-8 rounded-lg object-cover ring-1 ring-emerald-200 sm:h-9 sm:w-9"
-            priority
-          />
-          <span>AI Key Vault</span>
-        </h1>
-        <p className="text-sm text-zinc-500">本地保存、批量测试、模型识别、性能评测、复制与导出</p>
+        <div>
+          <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
+            <Image
+              src="/logo.png"
+              alt="Logo"
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg object-cover ring-1 ring-emerald-200 sm:h-9 sm:w-9"
+              priority
+            />
+            <span>AI Key Vault</span>
+          </h1>
+          <p className="mt-1 text-sm text-zinc-500">本地保存、批量测试、模型识别、性能评测、复制与导出</p>
+        </div>
+        <a
+          href={SOURCE_REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 focus:outline-none focus:ring-4 focus:ring-emerald-100 sm:min-w-72"
+          aria-label="打开项目源码 GitHub 仓库"
+        >
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-950 text-white">
+              <FaGithub className="h-5 w-5" aria-hidden />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-zinc-900">项目源码 GitHub</p>
+              <p className="text-xs text-zinc-500">Yoan98/ai-key-manage</p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition group-hover:border-emerald-300 group-hover:bg-emerald-100">
+            <FaLink aria-hidden />
+            <span>查看源码</span>
+          </span>
+        </a>
       </header>
 
       <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-emerald-50/70 to-white p-3.5 shadow-sm">
